@@ -1,0 +1,36 @@
+[project]
+name = "memory-bot"
+version = "0.1.0"
+description = "Pipecat voice I/O for the Memory Card game. The API owns every game decision; the bot never scores."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pipecat-ai[webrtc,deepgram,google,groq,openai,silero,runner]==1.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.7",
+]
+
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["memory_bot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not live'"
+markers = [
+    "live: calls real third-party services and needs API keys (run with -m live)",
+]

@@ -1,0 +1,22 @@
+{
+  "name": "memory-card-voice-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Voice memory game: NestJS game API, Pipecat voice bot, React web UI",
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "engines": {
+    "node": "^20.19.0"
+  },
+  "overrides": {
+    "fastify": "5.12.4"
+  },
+  "scripts": {
+    "build": "npm run build -ws",
+    "lint": "npm run lint -ws",
+    "typecheck": "npm run typecheck -ws",
+    "test": "npm run test -ws"
+  }
+}

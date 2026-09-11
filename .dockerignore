@@ -1,0 +1,10 @@
+.git
+.claude
+CLAUDE.local.md
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+voice-bot

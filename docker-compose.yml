@@ -1,0 +1,85 @@
+name: memory-card
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mc}
+      POSTGRES_DB: ${POSTGRES_DB:-memorycard}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file:
+      - path: api/.env
+        required: false
+    environment:
+      PORT: "4000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mc}:${POSTGRES_PASSWORD:-mc}@postgres:5432/${POSTGRES_DB:-memorycard}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:4000}
+        VITE_BOT_OFFER_URL: ${VITE_BOT_OFFER_URL:-http://localhost:7860/api/offer}
+        VITE_POLL_MS: ${VITE_POLL_MS:-3000}
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+  # Runs voice-bot/bot.py, delivered by milestone M4 in docs/PLAN.md; without it the
+  # container exits with "Failed to spawn: bot.py".
+  # SmallWebRTC ICE needs host networking, which Docker provides on Linux only.
+  # On macOS run the bot natively with `make bot-dev`.
+  bot:
+    profiles: ["full"]
+    build:
+      context: voice-bot
+    network_mode: host
+    env_file:
+      - path: voice-bot/.env
+        required: false
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
