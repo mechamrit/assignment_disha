@@ -50,11 +50,20 @@ def match_intent(transcript: str, vocab_word_count: int) -> Intent:
     return Intent.ANSWER if vocab_word_count > 0 else Intent.CHATTER
 
 
-def count_vocab_words(transcript: str, vocabulary: Sequence[str]) -> int:
-    """Counts game words in a transcript. The API still decides whether an answer is right."""
+def vocab_tokens(transcript: str, vocabulary: Sequence[str]) -> list[str]:
+    """The game words in a transcript, in the order they were said.
+
+    Used to tell an answer from an interruption while a sequence is still being read out. It is not
+    a judgement: the API compares the tokens it was sent against the round and decides the score.
+    """
     if not vocabulary:
-        return 0
+        return []
 
     words = re.findall(r"[a-z]+", transcript.casefold())
     known = {word.casefold() for word in vocabulary}
-    return sum(1 for word in words if word in known)
+    return [word for word in words if word in known]
+
+
+def count_vocab_words(transcript: str, vocabulary: Sequence[str]) -> int:
+    """Counts game words in a transcript. The API still decides whether an answer is right."""
+    return len(vocab_tokens(transcript, vocabulary))

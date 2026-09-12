@@ -21,6 +21,7 @@ from memory_bot.api.client import GameApiClient
 from memory_bot.api.errors import ApiError
 from memory_bot.config import get_settings
 from memory_bot.frames import GameControlFrame
+from memory_bot.game.state import Phase
 from memory_bot.pipeline.builder import GameWiring, build_pipeline
 
 # The browser connects over SmallWebRTC; the same bot works on Daily by adding a "daily" entry.
@@ -67,9 +68,25 @@ async def bot(runner_args: RunnerArguments) -> None:
             game=game,
         )
 
-        if built.gate is not None:
-            # The sender lives on the worker's RTVI processor, which exists only now.
-            built.gate.set_game_state_sender(built.worker.rtvi.send_server_message)
+        gate = built.gate
+        if gate is not None:
+            # Both of these live on the worker, which exists only now.
+            gate.set_game_state_sender(built.worker.rtvi.send_server_message)
+
+            async def end_the_pipeline() -> None:
+                await built.worker.end(reason="the game is over")
+
+            gate.set_end_callback(end_the_pipeline)
+
+        async def end_session_once(reason: str) -> None:
+            """Ends the session at the API unless the game has already ended itself."""
+            if not session_id or (gate is not None and gate.state.phase is Phase.ENDED):
+                return
+
+            try:
+                await client.end_session(session_id, reason, bot_instance_id)
+            except ApiError as error:
+                logger.warning("could not end session as {}: {}", reason, error)
 
         @built.worker.rtvi.event_handler("on_client_ready")
         async def _on_client_ready(rtvi: Any) -> None:
@@ -84,20 +101,22 @@ async def bot(runner_args: RunnerArguments) -> None:
                 return
 
             logger.info("client asked to end session {}", session_id or "<none>")
-            if session_id:
-                await client.end_session(session_id, "CLIENT_END", bot_instance_id)
+            await end_session_once("CLIENT_END")
             await rtvi.send_server_response(message, {"ok": True})
             await built.worker.end(reason="the player ended the game")
 
         @transport.event_handler("on_client_disconnected")
         async def _on_client_disconnected(*_args: Any) -> None:
             logger.info("client disconnected from session {}", session_id or "<none>")
-            if session_id:
-                try:
-                    await client.end_session(session_id, "DISCONNECTED", bot_instance_id)
-                except ApiError as error:
-                    logger.warning("could not end session on disconnect: {}", error)
+            await end_session_once("DISCONNECTED")
             await built.worker.cancel(reason="the player disconnected")
+
+        @built.worker.event_handler("on_idle_timeout")
+        async def _on_idle_timeout(*_args: Any) -> None:
+            # Nobody has said anything for long enough that the call is over in practice. The
+            # worker cancels itself once this handler returns, so only the API needs telling.
+            logger.info("pipeline went idle for session {}", session_id or "<none>")
+            await end_session_once("IDLE_TIMEOUT")
 
         runner = WorkerRunner(
             handle_sigint=runner_args.handle_sigint,

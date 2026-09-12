@@ -5,6 +5,7 @@ makes as much as the phases it moves through: one answer per attempt, the same a
 a retry, and never a score decided locally.
 """
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,11 +14,12 @@ from pipecat.frames.frames import (
     Frame,
     LLMContextFrame,
     TranscriptionFrame,
+    TTSSpeakFrame,
 )
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 
-from memory_bot.api.errors import InFlightError
+from memory_bot.api.errors import ApiError, InFlightError
 from memory_bot.frames import GameControlFrame, PresentationEndFrame, PresentationStartFrame
 from memory_bot.game.gate import GameGateProcessor
 from memory_bot.game.state import PendingAction, Phase
@@ -77,6 +79,7 @@ class FakeApi:
         self.rounds = [ROUND_ONE, ROUND_TWO]
         self.next_verdict: dict[str, Any] = verdict(next_round=ROUND_TWO)
         self.in_flight_failures = 0
+        self.network_failures = 0
 
     async def next_round(self, session_id: str, bot_instance_id: str) -> dict[str, Any]:
         payload = self.rounds[min(len(self.calls_of("next_round")), len(self.rounds) - 1)]
@@ -94,6 +97,9 @@ class FakeApi:
         if self.in_flight_failures > 0:
             self.in_flight_failures -= 1
             raise InFlightError(409, "IN_FLIGHT", "still scoring")
+        if self.network_failures > 0:
+            self.network_failures -= 1
+            raise ApiError(503, "HTTP_ERROR", "the API could not be reached")
         return self.next_verdict
 
     async def repeat_round(
@@ -170,9 +176,15 @@ class Harness:
     async def settle(self) -> None:
         await self.gate._jobs.join()
 
+    async def host_finished(self, *, interrupted: bool = False) -> None:
+        """The host stopped talking, either because it was done or because it was cut off."""
+        await self.gate.process_frame(BotStoppedSpeakingFrame(), FrameDirection.DOWNSTREAM)
+        await self.gate.on_assistant_turn_stopped(SimpleNamespace(interrupted=interrupted))
+        await self.settle()
+
     async def start_game(self) -> None:
         await self.send(GameControlFrame(action="start"))
-        await self.send(BotStoppedSpeakingFrame())  # host finished the intro
+        await self.host_finished()
 
     async def finish_read_out(self) -> None:
         await self.gate.on_presentation_started(self.gate.state.round.id)  # type: ignore[union-attr]
@@ -318,6 +330,140 @@ async def test_quitting_ends_the_session_at_the_api() -> None:
 
     assert h.api.calls_of("end_session")[0]["reason"] == "QUIT"
     assert "QUIT" in h.host.types()
+
+
+@pytest.mark.asyncio
+async def test_a_full_answer_over_the_read_out_is_scored_rather_than_restarted() -> None:
+    """Getting ahead of the host is allowed: they said the whole list, so it counts."""
+    h = Harness()
+    await h.start_game()
+
+    await h.say("apple tiger piano")
+
+    answers = h.api.calls_of("submit_answer")
+    assert len(answers) == 1
+    assert answers[0]["answered_during_presentation"] is True
+    assert not h.api.calls_of("repeat_round")
+
+
+@pytest.mark.asyncio
+async def test_talking_over_the_read_out_restarts_it_rather_than_scoring_half_a_list() -> None:
+    h = Harness()
+    await h.start_game()
+
+    await h.say("wait wait hold on")
+
+    assert not h.api.calls_of("submit_answer"), "they never heard the whole list"
+    assert h.api.calls_of("repeat_round")[0]["reason"] == "INTERRUPTED"
+    assert h.gate.state.pending_action is PendingAction.REPRESENT
+
+
+@pytest.mark.asyncio
+async def test_asking_for_the_score_over_the_read_out_reads_the_round_again() -> None:
+    h = Harness()
+    await h.start_game()
+
+    await h.say("what is my score")
+
+    assert "SCORE" in h.host.types()
+    assert not h.api.calls_of("submit_answer")
+    assert h.gate.state.pending_action is PendingAction.REPRESENT
+
+
+@pytest.mark.asyncio
+async def test_a_read_out_that_never_reports_finishing_still_opens_the_answer_window() -> None:
+    h = Harness()
+    await h.start_game()
+    await h.gate.on_presentation_started(h.gate.state.round.id)  # type: ignore[union-attr]
+
+    await h.gate._presentation_timeout(h.gate.state.round.id, 0.0)  # type: ignore[union-attr]  # noqa: SLF001
+    await h.settle()
+
+    assert any(call["type"] == "BOT_ERROR" for call in h.api.calls_of("record_event"))
+    assert h.api.calls_of("mark_presented"), "the player is listening, so start the clock"
+    assert h.gate.state.phase is Phase.AWAITING_ANSWER
+
+
+@pytest.mark.asyncio
+async def test_silence_gets_one_nudge_and_then_times_the_round_out() -> None:
+    h = Harness()
+    await h.start_game()
+    await h.finish_read_out()
+    spoken_before = len(h.frames_of(TTSSpeakFrame))
+
+    await h.gate.on_user_turn_idle()
+    await h.settle()
+
+    assert any(call["type"] == "NUDGE" for call in h.api.calls_of("record_event"))
+    assert len(h.frames_of(TTSSpeakFrame)) == spoken_before + 1
+    assert not h.api.calls_of("submit_answer"), "a nudge is not an answer"
+
+    await h.gate.on_user_turn_idle()
+    await h.settle()
+
+    answers = h.api.calls_of("submit_answer")
+    assert len(answers) == 1
+    assert answers[0]["kind"] == "TIMEOUT"
+
+
+@pytest.mark.asyncio
+async def test_interrupting_the_host_waits_for_the_player_instead_of_carrying_on() -> None:
+    h = Harness()
+    await h.send(GameControlFrame(action="start"))
+
+    await h.host_finished(interrupted=True)
+
+    assert h.gate.state.awaiting_post_interrupt_turn is True
+    assert h.gate.state.pending_action is PendingAction.PRESENT_NEXT, "still owed to the player"
+    assert not h.api.calls_of("next_round"), "the read-out waits until they have had their say"
+    h.gate._cancel_post_interrupt_watchdog()  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_an_interruption_with_nothing_after_it_carries_on_by_itself() -> None:
+    h = Harness()
+    await h.send(GameControlFrame(action="start"))
+    await h.host_finished(interrupted=True)
+
+    await h.gate._post_interrupt_timeout(0.0)  # noqa: SLF001
+    await h.settle()
+
+    assert h.api.calls_of("next_round"), "the game does not stall on a silent interruption"
+    assert h.gate.state.phase is Phase.PRESENTING
+
+
+@pytest.mark.asyncio
+async def test_an_answer_that_never_reaches_the_api_replays_the_round_rather_than_guessing() -> (
+    None
+):
+    h = Harness()
+    h.api.network_failures = 99
+    await h.start_game()
+    await h.finish_read_out()
+
+    await h.say("apple tiger piano")
+
+    attempts = {call["attempt_seq"] for call in h.api.calls_of("submit_answer")}
+    assert attempts == {1}, "a retry may never change the attempt the API deduplicates on"
+    assert "LOST_NOTES" in h.host.types()
+    assert h.api.calls_of("repeat_round")[0]["reason"] == "INTERRUPTED"
+    assert h.gate.state.score == 0, "nothing is scored without a verdict"
+
+
+@pytest.mark.asyncio
+async def test_a_speculative_turn_is_dropped_rather_than_answered() -> None:
+    """A guess at what the player is still saying would score half a sentence."""
+    h = Harness()
+    await h.start_game()
+    await h.finish_read_out()
+
+    await h.gate.process_frame(
+        TranscriptionFrame(user_id="u", text="apple tiger", timestamp=""),
+        FrameDirection.DOWNSTREAM,
+    )
+    await h.send(LLMContextFrame(context=LLMContext(), speculation=True))
+
+    assert not h.api.calls_of("submit_answer")
 
 
 @pytest.mark.asyncio

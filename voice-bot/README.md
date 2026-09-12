@@ -42,6 +42,24 @@ From `voice-bot/`:
 
 The host is either the phrase bank or a model, and the difference is contained: the gate reports a game event, and the voice renders it. A model host receives that event as one `[GAME EVENT]` system message and runs exactly once, so it never invents a number and never sees the words of an open round.
 
+## When a game does not go to plan
+
+A voice game that waits forever is worse than one that moves on, so every way a turn can stall has a way out. All of them are in `game/gate.py` and covered by `tests/integration/test_gate_phases.py`.
+
+| What happens | What the bot does |
+|---|---|
+| The player talks over the read-out | If they said the whole list, it counts and the API scores it. Anything less means they missed part of it, so the round is read again from the top rather than scored on what they caught |
+| They ask to repeat, quit, or for their score mid read-out | The command is answered, then the sequence is read again |
+| A read-out never reports finishing | A watchdog of two seconds plus 1.2 per word opens the answer window anyway and records a `BOT_ERROR`, so nobody is left listening to silence |
+| The player cuts the host off | Whatever the host still owed them is kept, not run over their voice. If they then say nothing, a three second watchdog carries on by itself |
+| The player goes quiet with the answer window open | One nudge, spoken directly rather than through the host. A second silence sends the round as a `TIMEOUT` |
+| The answer is already being scored | Retried five times at 200 ms, always with the same attempt number, because that is what the API deduplicates on |
+| The answer does not reach the API at all | Retried twice, then the host says it lost its notes and the round is read again. Nothing is scored without a verdict |
+| The session ended, or another bot took it over | The host says goodbye and the pipeline ends |
+| The player disconnects, or nothing happens for `PIPELINE_IDLE_TIMEOUT_SECS` | The session is ended at the API as `DISCONNECTED` or `IDLE_TIMEOUT`, unless the game already ended itself |
+
+A speculative context frame, which is the aggregator's guess at a turn the player is still speaking, is dropped with an error log. Acting on one would score half a sentence.
+
 ## Package layout
 
 Files in this tree:

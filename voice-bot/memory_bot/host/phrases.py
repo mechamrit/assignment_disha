@@ -76,6 +76,11 @@ QUIT = (
     "Alright, stopping there. Thanks for playing.",
 )
 
+LOST_NOTES = (
+    "I lost my notes on that one. Let us take the round again.",
+    "That one got away from me. We will run the round again.",
+)
+
 
 class PhraseBank:
     """Picks lines without repeating the previous one from the same bank."""
@@ -104,3 +109,13 @@ class PhraseBank:
 def spoken_list(words: Sequence[str]) -> str:
     """Words as the host would say them, used only when a failed round is revealed."""
     return ", ".join(words)
+
+
+# The nudge is spoken straight to the player rather than through the host, so it needs a bank of
+# its own that still remembers what it said last time.
+_NUDGE_BANK = PhraseBank()
+
+
+def nudge_line() -> str:
+    """A short line for a player who has gone quiet with the answer window open."""
+    return _NUDGE_BANK.pick(NUDGE)

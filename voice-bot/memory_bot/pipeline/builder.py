@@ -16,6 +16,7 @@ not to forward bot text to the browser: a round's words travel to the speaker on
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.pipeline.pipeline import Pipeline
@@ -84,6 +85,8 @@ def build_pipeline(
         context,
         user_params=build_user_aggregator_params(settings, turn_analyzer_factory),
     )
+    user_aggregator = aggregators.user()
+    assistant_aggregator = aggregators.assistant()
 
     gate: GameGateProcessor | None = None
     tracker: PresentationTracker | None = None
@@ -98,6 +101,17 @@ def build_pipeline(
             vocabulary=game.vocabulary,
             presentation_watchdog_extra_secs=settings.presentation_watchdog_extra_secs,
         )
+        game_gate = gate
+
+        # The two turn signals the gate cannot read off a frame: a player who has gone quiet, and
+        # whether the host finished its line or was cut off part way through it.
+        @user_aggregator.event_handler("on_user_turn_idle")
+        async def _on_user_turn_idle(_aggregator: Any) -> None:
+            await game_gate.on_user_turn_idle()
+
+        @assistant_aggregator.event_handler("on_assistant_turn_stopped")
+        async def _on_assistant_turn_stopped(_aggregator: Any, message: Any) -> None:
+            await game_gate.on_assistant_turn_stopped(message)
 
         # The scripted host renders events itself; a model needs them as one context message,
         # pushed by the gate, which is why the voice is attached after the gate exists.
@@ -115,13 +129,13 @@ def build_pipeline(
     else:
         host_processor = host if host is not None else EchoHost()
 
-    stages: list[FrameProcessor] = [transport.input(), speech_to_text, aggregators.user()]
+    stages: list[FrameProcessor] = [transport.input(), speech_to_text, user_aggregator]
     if gate is not None:
         stages.append(gate)
     stages.extend([host_processor, text_to_speech, transport.output()])
     if tracker is not None:
         stages.append(tracker)
-    stages.append(aggregators.assistant())
+    stages.append(assistant_aggregator)
 
     worker = PipelineWorker(
         Pipeline(stages),

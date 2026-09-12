@@ -73,6 +73,9 @@ class ScriptedHost(FrameProcessor):
         if event_type == "QUIT":
             return self._phrases.pick(phrases.QUIT)
 
+        if event_type == "LOST_NOTES":
+            return self._phrases.pick(phrases.LOST_NOTES)
+
         logger.debug("scripted host: nothing to say for {!r}", event_type)
         return ""
 
