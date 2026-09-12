@@ -23,4 +23,33 @@ export default defineConfig(
     files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // src/domain stays pure: no framework, no I/O, and no imports from the outer layers.
+    files: ['src/domain/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@nestjs/*',
+                '@prisma/*',
+                'prisma',
+                'ioredis',
+                'pino',
+                'nestjs-pino',
+                'zod',
+                '**/application/**',
+                '**/infrastructure/**',
+                '**/modules/**',
+              ],
+              message:
+                'src/domain must stay pure: no Nest, Prisma, Redis, or outer-layer imports (docs/PLAN.md, ADR 0002).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
