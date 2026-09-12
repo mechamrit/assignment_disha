@@ -19,7 +19,7 @@ Run `nvm use` first (`nvm install` on a machine without Node 20). The Makefile r
 | `make lint` / `make test` / `make build` | ESLint + tsc + ruff / jest + vitest + pytest / api and web builds |
 | `make ci` | Everything CI runs. Green before every commit |
 
-`bot-dev` and `demo` are stubs in this tree: each prints the file and the milestone that deliver it, then fails.
+`demo` is a stub in this tree: it prints the file and the milestone that delivers it, then fails.
 
 Per app:
 - api: `npm run test -w api`; one file `npm run test -w api -- src/domain/__tests__/compare.spec.ts`; by name `npm run test -w api -- -t "name"`

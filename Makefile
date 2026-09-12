@@ -37,7 +37,7 @@ api-dev: node-check ## API on :4000 with watch
 	npm run start:dev -w api
 
 bot-dev: ## Voice bot on :7860 (native SmallWebRTC runner)
-	$(call unavailable,voice-bot/bot.py,M4)
+	cd $(BOT) && uv run --locked bot.py -t webrtc
 
 web-dev: node-check ## Web UI on :5173
 	npm run dev -w web

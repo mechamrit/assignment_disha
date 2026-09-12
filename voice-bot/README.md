@@ -14,7 +14,9 @@ uv sync --locked
 cp .env.example .env
 ```
 
-`uv sync --locked` creates `.venv` with Python 3.11 (uv downloads it when missing) and installs exactly the tree in `uv.lock`, dev tools included. It fails instead of re-resolving when `pyproject.toml` and `uv.lock` disagree.
+`uv sync --locked` creates `.venv` with Python 3.11 and installs exactly the tree in `uv.lock`, dev tools included. It fails instead of re-resolving when `pyproject.toml` and `uv.lock` disagree.
+
+Speech needs `DEEPGRAM_API_KEY` in `.env`. Without it the bot builds and its tests run, but starting it raises `MissingDeepgramKeyError` as soon as a caller connects.
 
 ## Commands
 
@@ -28,7 +30,7 @@ From `voice-bot/`:
 | `uv run ruff format --check .` | Formatting check; `uv run ruff format .` applies it |
 | `uv add 'package==X.Y.Z'` | Add a dependency with an exact pin and update `uv.lock` |
 
-`make bot-dev` from the repo root is the entry point for running the bot with the SmallWebRTC runner on port 7860. In this tree it is a stub that prints the milestone delivering `bot.py` (M4) and exits 1.
+`make bot-dev` from the repo root runs `uv run bot.py -t webrtc`, which serves the SmallWebRTC runner and its prebuilt client on port 7860.
 
 ## Package layout
 
@@ -36,23 +38,17 @@ Files in this tree:
 
 | Path | Role |
 |---|---|
-| `pyproject.toml` | Dependencies (`pipecat-ai` with its extras), the `dev` group, the uv version floor, ruff and pytest settings |
-| `uv.lock` | Full pinned dependency tree |
-| `memory_bot/__init__.py` | Package root |
-| `tests/unit/test_pipecat_surface.py` | Fails when the Pipecat pin changes or an import path the plan relies on moves |
+| `bot.py` | Runner entry. The runner calls `bot(runner_args)` per connection, with `{sessionId, clientToken}` in `runner_args.body` |
+| `memory_bot/config.py` | Typed settings; `HOST_MODE=llm` falls back to `scripted` when the provider key is empty |
+| `memory_bot/pipeline/builder.py` | Frame order and the `PipelineWorker`, with injectable services so tests need no keys |
+| `memory_bot/pipeline/turns.py` | Turn-taking: two words to interrupt, Smart Turn to end a turn |
+| `memory_bot/pipeline/services.py` | Deepgram speech-to-text (keyterm boosted) and text-to-speech |
+| `memory_bot/host/echo.py` | Scaffolding host that repeats what it heard, so the pipeline can be exercised without an LLM |
+| `memory_bot/api/client.py` | Async client for the internal endpoints, including the idempotency key for answers |
+| `memory_bot/api/errors.py` | API error codes as types the phase machine can branch on |
+| `tests/` | `unit/` (settings, turn strategies, pipeline assembly, Pipecat surface), `integration/` (API client against a stub transport) |
 
-Target layout from `docs/PLAN.md` (a module appears with its first file):
-
-| Path | Holds |
-|---|---|
-| `bot.py` | Runner entry: attaches to the session through the API, builds the pipeline, runs the worker |
-| `memory_bot/config.py` | Typed settings read from the environment |
-| `memory_bot/frames.py` | Presentation sentinel frames and game control frames |
-| `memory_bot/pipeline/` | Pipeline assembly, turn strategies, service factories; the only place Pipecat service classes are imported |
-| `memory_bot/game/` | Phase machine (the gate), sequence presenter, presentation tracker, intent matching |
-| `memory_bot/host/` | Host prompt, phrase bank, scripted host, LLM tools, LLM provider factory |
-| `memory_bot/api/` | API client and the models generated from `contracts/` |
-| `tests/` | `unit/`, `integration/` (fake API and captured frames), `live/` |
+Still to come, from `docs/PLAN.md`: `memory_bot/frames.py` (presentation sentinels), `memory_bot/game/` (phase machine, presenter, tracker, intents), the scripted and LLM hosts under `memory_bot/host/`, and `memory_bot/api/models.py` generated from `contracts/openapi.json`.
 
 The rules for this package are in `.claude/rules/voice-bot.md`.
 
@@ -76,11 +72,11 @@ The rules for this package are in `.claude/rules/voice-bot.md`.
 | `PIPECAT_ALLOWED_ORIGINS`, `PIPECAT_ICE_SERVERS` | Browser origins the runner accepts, and the ICE servers. The Pipecat runner accepts every origin when no allowed origins are passed to it |
 | `LOG_LEVEL` | Log level |
 
-No code in this tree reads these variables. `.env` holds provider keys: it is gitignored, and the Claude Code settings deny reading it.
+`.env` holds provider keys: it is gitignored, and the Claude Code settings deny reading it.
 
 ## Docker
 
-The image installs the locked tree with uv (the download cache stays in a BuildKit cache mount, out of the image layers) and runs `bot.py` as the unprivileged `app` user through the runner on 127.0.0.1:7860. Compose runs it with host networking, which Docker provides on Linux only, so on macOS run the bot natively. Without `bot.py` the container exits with `Failed to spawn: bot.py`.
+The image installs the locked tree with uv (the download cache stays in a BuildKit cache mount, out of the image layers) and runs `bot.py` as the unprivileged `app` user through the runner on 127.0.0.1:7860. Compose runs it with host networking, which Docker provides on Linux only, so on macOS run the bot natively.
 
 ## Without uv
 

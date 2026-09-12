@@ -5,12 +5,16 @@ description = "Pipecat voice I/O for the Memory Card game. The API owns every ga
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "httpx==0.28.1",
     "pipecat-ai[webrtc,deepgram,google,groq,openai,silero,runner]==1.9.0",
+    "pydantic-settings==2.15.0",
 ]
 
 [dependency-groups]
 dev = [
+    "datamodel-code-generator==0.79.0",
     "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
     "ruff==0.16.7",
 ]
 
@@ -34,6 +38,8 @@ select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers -m 'not live'"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: calls real third-party services and needs API keys (run with -m live)",
 ]
