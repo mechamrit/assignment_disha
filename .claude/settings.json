@@ -5,20 +5,28 @@
       "Bash(make *)",
       "Bash(npm run *)",
       "Bash(npm test*)",
-      "Bash(uv run *)",
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run --locked pytest*)",
+      "Bash(uv run --locked ruff *)",
       "Bash(docker compose ps*)",
       "Bash(docker compose up -d*)",
       "Bash(git status*)",
       "Bash(git diff*)",
-      "Bash(curl -s http://localhost*)"
+      "Bash(curl -s http://localhost:4000/health)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:7860/client/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5173/)"
     ],
     "deny": [
       "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(*prisma migrate reset*)",
       "Bash(docker compose down -v*)",
-      "Bash(docker compose down --volumes*)"
+      "Bash(docker compose down --volumes*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)"
     ]
   },
   "hooks": {

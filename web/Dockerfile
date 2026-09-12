@@ -14,7 +14,8 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_POLL_MS=$VITE_POLL_MS
 RUN npm run build -w web
 
-FROM nginx:1.31.5-alpine
+# Runs as the unprivileged nginx user and listens on 8080.
+FROM nginxinc/nginx-unprivileged:1.31.5-alpine
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/web/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 8080

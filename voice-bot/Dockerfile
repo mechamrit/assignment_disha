@@ -5,8 +5,14 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+# The uv download cache lives in a BuildKit cache mount, so it never lands in an image layer.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
 COPY . .
-RUN uv sync --locked --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+RUN useradd --system --uid 10001 --create-home app
+USER app
 EXPOSE 7860
-CMD ["uv", "run", "--no-sync", "bot.py", "-t", "webrtc", "--host", "0.0.0.0"]
+# Compose runs this image with host networking, so 127.0.0.1 is the host's loopback.
+CMD ["uv", "run", "--no-sync", "bot.py", "-t", "webrtc", "--host", "127.0.0.1"]

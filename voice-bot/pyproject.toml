@@ -21,6 +21,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["memory_bot"]
 
+[tool.uv]
+required-version = ">=0.11.8"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
