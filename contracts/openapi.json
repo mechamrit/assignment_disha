@@ -84,6 +84,47 @@
         ]
       }
     },
+    "/sessions/{id}/rounds": {
+      "get": {
+        "operationId": "SessionsController_rounds",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundHistoryDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Round history. Words appear only for rounds that have been scored",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/sessions/{id}/end": {
       "post": {
         "operationId": "SessionsController_end",
@@ -130,6 +171,70 @@
         "summary": "End a session from the browser. Calling it twice is safe",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/scores/recent": {
+      "get": {
+        "operationId": "ScoresController_recent",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentScoresDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The last finished games, newest first",
+        "tags": [
+          "scores"
+        ]
+      }
+    },
+    "/leaderboard": {
+      "get": {
+        "operationId": "ScoresController_leaderboard",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 10,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Best score per player",
+        "tags": [
+          "scores"
         ]
       }
     },
@@ -399,6 +504,156 @@
           "startedAt",
           "endedAt",
           "updatedAt"
+        ]
+      },
+      "RoundHistoryItemDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "object",
+            "nullable": true
+          },
+          "repeats": {
+            "type": "number"
+          },
+          "pointsAwarded": {
+            "type": "number"
+          },
+          "sequence": {
+            "description": "Only once the round has been scored",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "heard": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "number",
+          "length",
+          "status",
+          "outcome",
+          "repeats",
+          "pointsAwarded"
+        ]
+      },
+      "RoundHistoryDto": {
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoundHistoryItemDto"
+            }
+          }
+        },
+        "required": [
+          "rounds"
+        ]
+      },
+      "RecentScoreDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "playerName": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "roundsCleared": {
+            "type": "number"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "endReason": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "sessionId",
+          "playerName",
+          "score",
+          "roundsCleared",
+          "endedAt",
+          "endReason"
+        ]
+      },
+      "RecentScoresDto": {
+        "type": "object",
+        "properties": {
+          "scores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentScoreDto"
+            }
+          }
+        },
+        "required": [
+          "scores"
+        ]
+      },
+      "LeaderboardEntryDto": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "number"
+          },
+          "playerId": {
+            "type": "string"
+          },
+          "playerName": {
+            "type": "string"
+          },
+          "bestScore": {
+            "type": "number"
+          },
+          "bestRounds": {
+            "type": "number"
+          },
+          "achievedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rank",
+          "playerId",
+          "playerName",
+          "bestScore",
+          "bestRounds",
+          "achievedAt"
+        ]
+      },
+      "LeaderboardDto": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardEntryDto"
+            }
+          }
+        },
+        "required": [
+          "entries"
         ]
       },
       "HealthDto": {

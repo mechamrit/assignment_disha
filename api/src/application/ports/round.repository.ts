@@ -32,7 +32,11 @@ export interface EvaluateRoundPatch {
 }
 
 export interface RoundRepository {
-  create(input: CreateRoundInput): Promise<RoundRecord>;
+  /**
+   * Creates the round, or returns the one another writer created first. Round numbers are unique
+   * per session, so two bots asking for the next round at once still get the same round.
+   */
+  createIfAbsent(input: CreateRoundInput): Promise<{ created: boolean; round: RoundRecord }>;
 
   findById(roundId: string): Promise<RoundRecord | null>;
 

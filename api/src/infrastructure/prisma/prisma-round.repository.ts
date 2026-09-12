@@ -21,17 +21,25 @@ const UNIQUE_VIOLATION = 'P2002';
 export class PrismaRoundRepository implements RoundRepository {
   constructor(private readonly db: PrismaDb) {}
 
-  async create(input: CreateRoundInput): Promise<RoundRecord> {
-    const row = await this.db.round.create({
-      data: {
-        sessionId: input.sessionId,
-        number: input.number,
-        sequence: input.sequence,
-        difficulty: input.difficulty,
-        separator: input.separator,
-      },
-    });
-    return toRoundRecord(row);
+  async createIfAbsent(input: CreateRoundInput): Promise<{ created: boolean; round: RoundRecord }> {
+    try {
+      const row = await this.db.round.create({
+        data: {
+          sessionId: input.sessionId,
+          number: input.number,
+          sequence: input.sequence,
+          difficulty: input.difficulty,
+          separator: input.separator,
+        },
+      });
+      return { created: true, round: toRoundRecord(row) };
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+
+      const existing = await this.findBySessionAndNumber(input.sessionId, input.number);
+      if (!existing) throw error;
+      return { created: false, round: existing };
+    }
   }
 
   async findById(roundId: string): Promise<RoundRecord | null> {

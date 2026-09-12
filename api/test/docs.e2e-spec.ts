@@ -36,9 +36,12 @@ describe('swagger docs (e2e)', () => {
     expect(res.statusCode).toBe(200);
     expect(Object.keys(body<OpenApiBody>(res).paths).sort()).toEqual([
       '/health',
+      '/leaderboard',
+      '/scores/recent',
       '/sessions',
       '/sessions/{id}',
       '/sessions/{id}/end',
+      '/sessions/{id}/rounds',
     ]);
   });
 

@@ -7,6 +7,7 @@ import {
 import { isTerminalSession, statusForEndReason } from '../../domain/session.state';
 import type { EndReason } from '../../domain/types';
 import { GAME_CONFIG, type GameConfig } from '../game-config';
+import { OnSessionCompleted } from '../leaderboard/on-session-completed';
 import { CACHE, type CachePort } from '../ports/cache.port';
 import { CLOCK, type ClockPort } from '../ports/clock.port';
 import { ID, type IdPort } from '../ports/id.port';
@@ -34,6 +35,7 @@ export class EndSession {
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID) private readonly ids: IdPort,
     @Inject(GAME_CONFIG) private readonly config: GameConfig,
+    private readonly onSessionCompleted: OnSessionCompleted,
   ) {}
 
   async execute(command: EndSessionCommand): Promise<SessionView> {
@@ -73,6 +75,9 @@ export class EndSession {
       reason: command.reason,
       botInstanceId: command.botInstanceId ?? null,
     });
+
+    // The game is over, so this result belongs on the leaderboard and in the recent list.
+    await this.onSessionCompleted.execute(updated, player);
 
     const rounds = await this.repos.rounds.listForSession(session.id);
     const view = buildSessionView({ session: updated, player, rounds });

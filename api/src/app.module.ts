@@ -6,6 +6,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { DomainErrorFilter } from './infrastructure/http/filters/domain-error.filter';
 import { HealthModule } from './modules/health.module';
 import { InfraModule } from './modules/infra.module';
+import { LeaderboardModule } from './modules/leaderboard.module';
+import { RoundsModule } from './modules/rounds.module';
 import { SessionsModule } from './modules/sessions.module';
 
 @Module({
@@ -23,6 +25,8 @@ import { SessionsModule } from './modules/sessions.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
     InfraModule,
     SessionsModule,
+    RoundsModule,
+    LeaderboardModule,
     HealthModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: DomainErrorFilter }],

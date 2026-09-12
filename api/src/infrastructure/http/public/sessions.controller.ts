@@ -14,8 +14,10 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { CreateSession } from '../../../application/sessions/create-session';
 import { EndSession } from '../../../application/sessions/end-session';
 import { GetSession } from '../../../application/sessions/get-session';
+import { GetSessionRounds } from '../../../application/sessions/get-session-rounds';
 import type { SessionView } from '../../../application/views/session-view';
 import { ValidationError } from '../../../domain/errors';
+import { RoundHistoryDto } from '../dto/round.dto';
 import {
   CreateSessionDto,
   CreateSessionResponseDto,
@@ -31,6 +33,7 @@ export class SessionsController {
   constructor(
     private readonly createSession: CreateSession,
     private readonly getSession: GetSession,
+    private readonly getSessionRounds: GetSessionRounds,
     private readonly endSession: EndSession,
   ) {}
 
@@ -50,6 +53,14 @@ export class SessionsController {
   @ApiResponse({ status: 404, type: ErrorDto })
   find(@Param('id') id: string): Promise<SessionView> {
     return this.getSession.execute(id);
+  }
+
+  @Get(':id/rounds')
+  @ApiOperation({ summary: 'Round history. Words appear only for rounds that have been scored' })
+  @ApiResponse({ status: 200, type: RoundHistoryDto })
+  @ApiResponse({ status: 404, type: ErrorDto })
+  async rounds(@Param('id') id: string): Promise<RoundHistoryDto> {
+    return { rounds: await this.getSessionRounds.execute(id) };
   }
 
   @Post(':id/end')
