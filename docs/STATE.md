@@ -1,21 +1,20 @@
-Milestone: M4 done (M0 to M4 complete)        Done: M0 fe54682, M0 hardening bbeaff9, M2 a2eeafb, M1 eb6a12f, M3 740fc61, M4 in this session (`git log --oneline`)
-Now: The API plays a whole game (sessions, rounds, idempotent scoring, leaderboard). The voice bot has its skeleton: typed settings, the Deepgram speech services with keyterm boosting, the turn-taking rules, an echo host, the pipeline builder, the API client for the internal endpoints, and `bot.py` for the SmallWebRTC runner. web is still the M0 shell.
-Next action: M5. The game loop in scripted mode: memory_bot/frames.py (presentation sentinels), memory_bot/game/{state,intents,gate,presenter,tracker}.py, and memory_bot/host/{phrases,scripted}.py, with pytest covering every row of the phase table against a fake API. Generate the bot's pydantic models as part of it: the public contracts/openapi.json hides the internal routes on purpose, so emit a second complete document (contracts/openapi-internal.json) from the same Nest app and generate from that, keeping /docs public.
-Blocked: two things, neither blocking M5.
-  1. A spoken round needs DEEPGRAM_API_KEY in voice-bot/.env. Without it the runner starts and serves its client, but a caller gets MissingDeepgramKeyError.
+Milestone: M5 done (M0 to M5 complete)        Done: M0 fe54682, M0 hardening bbeaff9, M2 a2eeafb, M1 eb6a12f, M3 740fc61, M4 a3e2a03, M5 in this session (`git log --oneline`). Pushed to git@github.com:mechamrit/assignment_disha.git (main).
+Now: A whole game exists in code. The API owns sessions, rounds, idempotent scoring, and the leaderboard. The bot has the scripted game loop: presentation sentinels, the gate phase machine, the presenter and tracker, the intent matcher, the phrase bank and scripted host, the API client, and the pipeline and runner wiring (ready handshake, end_game message, disconnect). web is still the M0 shell.
+Next action: M6. The LLM host: memory_bot/host/{prompt,llm_factory,tools}.py, the GAME_EVENT message the host reacts to, and the provider switch for gemini, groq, and openai with the scripted fallback already in place. Then generate memory_bot/api/models.py: the committed contracts/openapi.json hides the internal routes on purpose, so emit a second complete document (contracts/openapi-internal.json) from the same Nest app and generate from that, keeping /docs public.
+Blocked: two things, neither blocking M6.
+  1. A spoken round needs DEEPGRAM_API_KEY in voice-bot/.env. Everything below the microphone is covered by tests, but no real audio has passed through yet.
   2. The browser voice client: @pipecat-ai/small-webrtc-transport pulls @daily-co/daily-js, which needs Node 22.14 from 0.89.0 on, so on Node 20 only the older set installs (client-js 1.6.x with transport 1.9.0) and its RTVI protocol may not match Python pipecat 1.9.0. Decide before M8: move the repo to Node 22, pin the older client set, or drop engine-strict.
 Last verified:
-- make ci: exit 0 (api 83 unit tests, web vitest, bot 39 pytest, api and web builds, lint and formatting across all three)
-- `uv run bot.py -t webrtc` starts in 4 s, serves the Pipecat prebuilt client at /client/ (200), and /api/offer rejects an empty body with 422 naming the missing sdp and type fields; the port is released on shutdown
-- bot pytest proves the Pipecat surface the plan relies on: the pipeline assembles with stub services (no keys), the aggregator pair exposes user() and assistant(), PipelineWorker accepts the metrics params and exposes .rtvi, MinWords is the only start strategy, and Smart Turn is the stop strategy
-- the API client sends `idempotency-key: <roundId>:<attemptSeq>` and turns 409 IN_FLIGHT, SESSION_ENDED, and STALE_BOT into distinct exception types
-- settings fall back from llm to scripted when the selected provider key is empty
+- make ci: exit 0 (api 83 unit tests, web vitest, bot 93 pytest, api and web builds, lint and formatting across all three)
+- the gate phase table, against a fake API (11 tests): the intro leads into the first read-out; finishing the read-out tells the API the round was presented and opens the answer window; an answer is sent once with attempt 1 and the score comes from the verdict; an IN_FLIGHT retry reuses the same attempt number; asking to repeat reopens the read-out without answering; chatter is recorded and never scored; talking while a verdict is pending cannot change it; giving up sends one GIVE_UP; a lost game says goodbye and queues the end; quitting ends the session at the API; and no game_state message ever contains a round's words
+- presentation: the sequence is queued as one TTSSpeakFrame between sentinels with append_to_context false, and the tracker reports started, finished, and interrupted in the right order
+- `uv run bot.py -t webrtc` boots in 4 s with the game wiring and serves the client page (200)
 - api e2e (3 suites, 23 tests) and the M3 concurrency proofs still pass unchanged
 Notes:
-- The echo host is scaffolding, not the game host: it repeats the player's last sentence so the pipeline can be exercised without an LLM key. M5 and M6 replace it.
-- The Smart Turn analyzer is constructed through an injectable factory, so tests never download its model.
-- Deepgram keyterms are capped at 100 words in the service factory; the API sends about 85.
-- The API refuses to score an answer with no vocabulary words (VALIDATION) and records a CHATTER event instead, so a stray "hmm" can never end a game.
+- The gate never awaits the network inside process_frame: it snapshots the turn, flips the phase, and queues a job for a task created on StartFrame, because Pipecat cancels the frame task on an interruption.
+- One TTSSpeakFrame per sequence, never one per word: per-word frames would let the bot stop speaking between words, which drops the interruption threshold to a single word.
+- The idempotency key is derived from roundId and attemptSeq on both sides; the API rejects a mismatched header rather than trusting it.
+- The API refuses to score an answer with no vocabulary words (VALIDATION) and records a CHATTER event instead.
 - A fresh clone needs `npm run db:generate -w api` before typecheck, tests, or build.
 - Prisma is pinned to 6.19.3 and nestjs-pino to 4.6.1 with pino 9, because their newest releases require Node 22.
 - Root package.json overrides fastify to 5.12.4 (GHSA-w2qp-rph6-63g4, GHSA-3m5p-2c4r-xxw2, fixed in 5.12.1).

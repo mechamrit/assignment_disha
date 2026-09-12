@@ -1,11 +1,16 @@
 """Pipeline assembly.
 
-Frame order matters and is the same one docs/PLAN.md specifies:
+Frame order matters and is the one docs/PLAN.md specifies:
 
-    transport.input() -> stt -> user aggregator -> host -> tts -> transport.output() -> assistant
+    transport.input() -> stt -> user aggregator -> gate -> host -> tts -> transport.output()
+        -> presentation tracker -> assistant aggregator
 
-The RTVI observer is told not to forward bot text to the browser: the words of a round travel to
-the speaker only, never to the screen, or the game would be trivial to cheat.
+The tracker sits after `transport.output()` on purpose: the output transport writes audio before it
+forwards any other frame, so a sentinel arriving there means the player has actually heard the
+words, not merely that they were queued.
+
+The RTVI observer is told not to forward bot text to the browser: a round's words travel to the
+speaker only, or the game would be trivial to cheat.
 """
 
 from collections.abc import Sequence
@@ -20,19 +25,34 @@ from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.processors.frameworks.rtvi import RTVIObserverParams
 from pipecat.transports.base_transport import BaseTransport
 
+from memory_bot.api.client import GameApiClient
 from memory_bot.config import BotSettings
+from memory_bot.game.gate import GameGateProcessor
+from memory_bot.game.tracker import PresentationTracker
 from memory_bot.host.echo import EchoHost
+from memory_bot.host.scripted import ScriptedHost
 from memory_bot.pipeline.services import build_stt, build_tts
 from memory_bot.pipeline.turns import TurnAnalyzerFactory, build_user_aggregator_params
 
 
 @dataclass
+class GameWiring:
+    """What the gate needs to play a session. Absent means the echo pipeline is built instead."""
+
+    client: GameApiClient
+    session_id: str
+    bot_instance_id: str
+    vocabulary: list[str]
+
+
+@dataclass
 class BuiltPipeline:
-    """The worker plus the pieces a caller may still need to reach."""
+    """The worker plus the pieces a caller still needs to reach."""
 
     worker: PipelineWorker
     context: LLMContext
     host: FrameProcessor
+    gate: GameGateProcessor | None = None
 
 
 def build_pipeline(
@@ -43,6 +63,7 @@ def build_pipeline(
     conversation_id: str | None = None,
     idle_timeout_secs: float | None = None,
     turn_analyzer_factory: TurnAnalyzerFactory = LocalSmartTurnAnalyzerV3,
+    game: GameWiring | None = None,
     stt: FrameProcessor | None = None,
     tts: FrameProcessor | None = None,
     host: FrameProcessor | None = None,
@@ -50,7 +71,6 @@ def build_pipeline(
     """Builds the worker. `stt`, `tts`, and `host` are injectable so tests need no API keys."""
     speech_to_text = stt if stt is not None else build_stt(settings, keyterms)
     text_to_speech = tts if tts is not None else build_tts(settings)
-    host_processor = host if host is not None else EchoHost()
 
     context = LLMContext()
     aggregators = LLMContextAggregatorPair(
@@ -58,20 +78,37 @@ def build_pipeline(
         user_params=build_user_aggregator_params(settings, turn_analyzer_factory),
     )
 
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            speech_to_text,
-            aggregators.user(),
-            host_processor,
-            text_to_speech,
-            transport.output(),
-            aggregators.assistant(),
-        ]
-    )
+    gate: GameGateProcessor | None = None
+    tracker: PresentationTracker | None = None
+
+    if game is not None:
+        host_processor: FrameProcessor = host if host is not None else ScriptedHost()
+        gate = GameGateProcessor(
+            client=game.client,
+            session_id=game.session_id,
+            bot_instance_id=game.bot_instance_id,
+            host=host_processor,  # type: ignore[arg-type]
+            vocabulary=game.vocabulary,
+            presentation_watchdog_extra_secs=settings.presentation_watchdog_extra_secs,
+        )
+        tracker = PresentationTracker(
+            on_started=gate.on_presentation_started,
+            on_finished=gate.on_presentation_finished,
+            on_interrupted=gate.on_presentation_interrupted,
+        )
+    else:
+        host_processor = host if host is not None else EchoHost()
+
+    stages: list[FrameProcessor] = [transport.input(), speech_to_text, aggregators.user()]
+    if gate is not None:
+        stages.append(gate)
+    stages.extend([host_processor, text_to_speech, transport.output()])
+    if tracker is not None:
+        stages.append(tracker)
+    stages.append(aggregators.assistant())
 
     worker = PipelineWorker(
-        pipeline,
+        Pipeline(stages),
         params=PipelineParams(enable_metrics=True),
         idle_timeout_secs=idle_timeout_secs,
         conversation_id=conversation_id,
@@ -82,4 +119,4 @@ def build_pipeline(
         ),
     )
 
-    return BuiltPipeline(worker=worker, context=context, host=host_processor)
+    return BuiltPipeline(worker=worker, context=context, host=host_processor, gate=gate)
