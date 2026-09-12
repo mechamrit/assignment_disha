@@ -16,7 +16,7 @@ cp .env.example .env
 
 `uv sync --locked` creates `.venv` with Python 3.11 and installs exactly the tree in `uv.lock`, dev tools included. It fails instead of re-resolving when `pyproject.toml` and `uv.lock` disagree.
 
-Speech needs `DEEPGRAM_API_KEY` in `.env`. Without it the bot builds, its tests run, and the runner serves its client page, but a caller gets `MissingDeepgramKeyError` as the pipeline is assembled.
+Speech needs `DEEPGRAM_API_KEY` in `.env`. Without it the bot builds, its tests run, and the runner serves its client page, but a caller gets `MissingDeepgramKeyError` as the pipeline is assembled. An LLM key is optional: with none, the host falls back to the scripted phrase bank and the game plays in full.
 
 ## Commands
 
@@ -40,6 +40,8 @@ From `voice-bot/`:
 4. The tracker reports that the words have actually played, the gate tells the API the round was presented, and the answer window opens.
 5. A finished user turn is classified (answer, repeat, quit, give up, score, help, or chatter) and sent to the API, which returns the verdict. The gate copies the numbers and the host says them.
 
+The host is either the phrase bank or a model, and the difference is contained: the gate reports a game event, and the voice renders it. A model host receives that event as one `[GAME EVENT]` system message and runs exactly once, so it never invents a number and never sees the words of an open round.
+
 ## Package layout
 
 Files in this tree:
@@ -49,7 +51,7 @@ Files in this tree:
 | `bot.py` | Runner entry. The runner calls `bot(runner_args)` per connection, with `{sessionId, clientToken}` in `runner_args.body` |
 | `memory_bot/config.py` | Typed settings; `HOST_MODE=llm` falls back to `scripted` when the provider key is empty |
 | `memory_bot/frames.py` | Presentation sentinels and the game control frame |
-| `memory_bot/pipeline/builder.py` | Frame order and the `PipelineWorker`, with injectable services so tests need no keys |
+| `memory_bot/pipeline/builder.py` | Frame order, host choice, and the `PipelineWorker`, with injectable services so tests need no keys |
 | `memory_bot/pipeline/turns.py` | Turn-taking: two words to interrupt, Smart Turn to end a turn |
 | `memory_bot/pipeline/services.py` | Deepgram speech-to-text (keyterm boosted) and text-to-speech |
 | `memory_bot/game/gate.py` | The phase machine. It never awaits the network inside `process_frame` |
@@ -57,14 +59,18 @@ Files in this tree:
 | `memory_bot/game/presenter.py` | Reads a sequence as one utterance between sentinels |
 | `memory_bot/game/tracker.py` | Turns those sentinels into started, finished, and interrupted callbacks |
 | `memory_bot/game/intents.py` | Repeat, quit, give up, score, and help, guarded by the vocabulary count |
+| `memory_bot/host/voice.py` | How an event becomes speech: the phrase bank, or one model turn |
 | `memory_bot/host/scripted.py` | Speaks game events from the phrase bank, with no model involved |
 | `memory_bot/host/phrases.py` | The line banks, picked without repeating the previous choice |
+| `memory_bot/host/prompt.py` | The host persona and the `[GAME EVENT]` line a model reacts to |
+| `memory_bot/host/llm_factory.py` | Picks the scripted host or the Gemini, Groq, or OpenAI service |
+| `memory_bot/host/tools.py` | Tools the model may call; each records an intent on the gate and decides nothing |
 | `memory_bot/host/echo.py` | Scaffolding host for a connection with no session attached |
 | `memory_bot/api/client.py` | Async client for the internal endpoints, including the idempotency key for answers |
 | `memory_bot/api/errors.py` | API error codes as types the phase machine can branch on |
-| `tests/` | `unit/` (settings, turns, intents, state, phrases, pipeline assembly, Pipecat surface), `integration/` (API client, presentation, the phase table against a fake API) |
+| `tests/` | `unit/` (settings, turns, intents, state, phrases, host prompt, tools, voice, pipeline assembly, Pipecat surface), `integration/` (API client, presentation, the phase table against a fake API) |
 
-Still to come, from `docs/PLAN.md`: the LLM host (`host/prompt.py`, `host/tools.py`, `host/llm_factory.py`) in M6, and `memory_bot/api/models.py` generated from the contracts. Generating those models needs a complete OpenAPI document: the committed `contracts/openapi.json` hides the internal routes on purpose, so a second document is emitted for code generation.
+Still to come, from `docs/PLAN.md`: `memory_bot/api/models.py`, generated from the contracts. That needs a complete OpenAPI document, and the committed `contracts/openapi.json` hides the internal routes on purpose, so a second document is emitted for code generation.
 
 The rules for this package are in `.claude/rules/voice-bot.md`.
 

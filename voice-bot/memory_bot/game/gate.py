@@ -38,7 +38,7 @@ from memory_bot.frames import GameControlFrame
 from memory_bot.game.intents import Intent, count_vocab_words, match_intent
 from memory_bot.game.presenter import present_sequence
 from memory_bot.game.state import GameState, PendingAction, Phase, RoundState
-from memory_bot.host.scripted import ScriptedHost
+from memory_bot.host.voice import HostVoice
 
 IN_FLIGHT_RETRY_SECONDS = 0.2
 IN_FLIGHT_MAX_RETRIES = 5
@@ -61,7 +61,7 @@ class GameGateProcessor(FrameProcessor):
         client: GameApiClient,
         session_id: str,
         bot_instance_id: str,
-        host: ScriptedHost,
+        host: HostVoice | None = None,
         vocabulary: list[str],
         presentation_watchdog_extra_secs: float = 0.0,
         send_game_state: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
@@ -69,7 +69,7 @@ class GameGateProcessor(FrameProcessor):
         super().__init__()
         self._client = client
         self._bot_instance_id = bot_instance_id
-        self._host = host
+        self._voice = host
         self._vocabulary = vocabulary
         self._watchdog_extra = presentation_watchdog_extra_secs
         self._send_game_state = send_game_state
@@ -423,8 +423,35 @@ class GameGateProcessor(FrameProcessor):
 
     # ---------------------------------------------------------------- helpers
 
+    def set_voice(self, voice: HostVoice) -> None:
+        """Wired after construction when the voice needs the gate to push its frames."""
+        self._voice = voice
+
     async def _say(self, event: dict[str, Any]) -> None:
-        await self._host.say_event(event)
+        if self._voice is None:
+            logger.warning("no host voice attached; dropping event {}", event.get("type"))
+            return
+        await self._voice.say_event(event)
+
+    def request_intent(self, intent: Intent, source: str = "tool") -> None:
+        """Queues the same work a spoken command would, without awaiting anything.
+
+        Tools call this, so a model asking to repeat or to end the game takes exactly the path the
+        player's own words take: the gate asks the API, and the API decides.
+        """
+        logger.info("intent {} requested by {}", intent, source)
+
+        if intent is Intent.REPEAT:
+            self.state.pending_action = PendingAction.REPRESENT
+            self._enqueue("REPEAT", {"reason": "REQUESTED"})
+        elif intent is Intent.QUIT:
+            self.state.phase = Phase.ENDING
+            self._enqueue("QUIT")
+        elif intent is Intent.SCORE:
+            self._enqueue(
+                "SAY",
+                {"type": "SCORE", "score": self.state.score, "rounds": self.state.rounds_cleared},
+            )
 
     def set_game_state_sender(self, sender: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         """Wired after the worker exists: the sender lives on its RTVI processor."""

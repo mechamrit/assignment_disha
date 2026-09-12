@@ -59,7 +59,7 @@ class BotSettings(BaseSettings):
             "gemini": self.google_api_key,
             "groq": self.groq_api_key,
             "openai": self.openai_api_key,
-        }[self.llm_provider]
+        }.get(self.llm_provider, "")
 
     @property
     def effective_host_mode(self) -> HostMode:
@@ -70,7 +70,7 @@ class BotSettings(BaseSettings):
 
     @property
     def effective_llm_model(self) -> str:
-        return self.llm_model or DEFAULT_LLM_MODELS[self.llm_provider]
+        return self.llm_model or DEFAULT_LLM_MODELS.get(self.llm_provider, "")
 
 
 @lru_cache(maxsize=1)

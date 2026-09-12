@@ -9,8 +9,9 @@ The tracker sits after `transport.output()` on purpose: the output transport wri
 forwards any other frame, so a sentinel arriving there means the player has actually heard the
 words, not merely that they were queued.
 
-The RTVI observer is told not to forward bot text to the browser: a round's words travel to the
-speaker only, or the game would be trivial to cheat.
+The host is either the scripted phrase bank or a model. Either way the gate reports game events
+and the host only voices them, so the model never decides an outcome. The RTVI observer is told
+not to forward bot text to the browser: a round's words travel to the speaker only.
 """
 
 from collections.abc import Sequence
@@ -30,7 +31,10 @@ from memory_bot.config import BotSettings
 from memory_bot.game.gate import GameGateProcessor
 from memory_bot.game.tracker import PresentationTracker
 from memory_bot.host.echo import EchoHost
+from memory_bot.host.llm_factory import build_host, uses_scripted_host
 from memory_bot.host.scripted import ScriptedHost
+from memory_bot.host.tools import HOST_TOOLS
+from memory_bot.host.voice import LlmVoice, ScriptedVoice
 from memory_bot.pipeline.services import build_stt, build_tts
 from memory_bot.pipeline.turns import TurnAnalyzerFactory, build_user_aggregator_params
 
@@ -72,7 +76,10 @@ def build_pipeline(
     speech_to_text = stt if stt is not None else build_stt(settings, keyterms)
     text_to_speech = tts if tts is not None else build_tts(settings)
 
-    context = LLMContext()
+    # Tools belong to the model host only; the scripted host never calls one.
+    model_hosted = game is not None and not uses_scripted_host(settings)
+    context = LLMContext(tools=HOST_TOOLS) if model_hosted else LLMContext()
+
     aggregators = LLMContextAggregatorPair(
         context,
         user_params=build_user_aggregator_params(settings, turn_analyzer_factory),
@@ -82,15 +89,24 @@ def build_pipeline(
     tracker: PresentationTracker | None = None
 
     if game is not None:
-        host_processor: FrameProcessor = host if host is not None else ScriptedHost()
+        host_processor: FrameProcessor = host if host is not None else build_host(settings)
+
         gate = GameGateProcessor(
             client=game.client,
             session_id=game.session_id,
             bot_instance_id=game.bot_instance_id,
-            host=host_processor,  # type: ignore[arg-type]
             vocabulary=game.vocabulary,
             presentation_watchdog_extra_secs=settings.presentation_watchdog_extra_secs,
         )
+
+        # The scripted host renders events itself; a model needs them as one context message,
+        # pushed by the gate, which is why the voice is attached after the gate exists.
+        gate.set_voice(
+            ScriptedVoice(host_processor)
+            if isinstance(host_processor, ScriptedHost)
+            else LlmVoice(context, gate)
+        )
+
         tracker = PresentationTracker(
             on_started=gate.on_presentation_started,
             on_finished=gate.on_presentation_finished,
@@ -112,6 +128,9 @@ def build_pipeline(
         params=PipelineParams(enable_metrics=True),
         idle_timeout_secs=idle_timeout_secs,
         conversation_id=conversation_id,
+        # Host tools reach the gate through this, so a tool call takes the same path a spoken
+        # command does.
+        app_resources={"gate": gate} if gate is not None else None,
         rtvi_observer_params=RTVIObserverParams(
             bot_output_enabled=False,
             bot_tts_enabled=False,
