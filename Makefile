@@ -18,7 +18,7 @@ help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-16s %s\n", $$1, $$2}'
 
 node-check:
-	@node -e 'const m = Number(process.versions.node.split(".")[0]); if (m !== 20) { console.error("Node 20 required, found " + process.version + ". Run: nvm use"); process.exit(1); }'
+	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major !== 20 || minor < 19) { console.error("Node 20.19 or a newer 20.x is required, found " + process.version + ". Run: nvm install"); process.exit(1); }'
 
 install: node-check ## npm ci (api, web) and uv sync (voice-bot)
 	npm ci
@@ -30,8 +30,8 @@ infra-up: ## Start postgres and redis, wait until healthy
 infra-down: ## Stop postgres and redis (volumes kept)
 	$(COMPOSE) down
 
-db-migrate: ## Apply Prisma migrations
-	$(call unavailable,api/prisma/schema.prisma,M1)
+db-migrate: node-check ## Apply Prisma migrations
+	npm run db:migrate -w api
 
 api-dev: node-check ## API on :4000 with watch
 	npm run start:dev -w api
@@ -42,11 +42,11 @@ bot-dev: ## Voice bot on :7860 (native SmallWebRTC runner)
 web-dev: node-check ## Web UI on :5173
 	npm run dev -w web
 
-contracts-emit: ## Emit OpenAPI, regenerate web types and bot models
-	$(call unavailable,api/scripts/emit-openapi.ts,M1)
+contracts-emit: node-check ## Emit contracts/openapi.json from the API
+	npm run openapi:emit -w api
 
-contracts-check: ## Regenerate contracts and fail on git diff
-	$(call unavailable,contracts/openapi.json,M1)
+contracts-check: node-check ## Regenerate contracts and fail on git diff
+	npm run openapi:emit -w api && git diff --exit-code -- contracts
 
 lint: node-check ## ESLint and tsc (api, web), ruff (voice-bot)
 	npm run lint -ws

@@ -1,0 +1,148 @@
+// Data model from docs/PLAN.md "Data model". Postgres is the system of record:
+// uniqueness and compare-and-set columns here are what stop an answer being scored twice.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SessionStatus {
+  CREATED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  EXPIRED
+}
+
+enum EndReason {
+  FAILED
+  MAX_ROUNDS
+  QUIT
+  DISCONNECTED
+  IDLE_TIMEOUT
+  EXPIRED
+  CLIENT_END
+}
+
+enum RoundStatus {
+  CREATED
+  AWAITING_ANSWER
+  EVALUATED
+}
+
+enum RoundOutcome {
+  PASS
+  FAIL
+  TIMEOUT
+}
+
+enum ResponseKind {
+  ANSWER
+  TIMEOUT
+  GIVE_UP
+  COMMAND
+  CHATTER
+  INTERRUPTION
+}
+
+enum Difficulty {
+  EASY
+  HARD
+}
+
+model Player {
+  id        String        @id @default(uuid())
+  name      String
+  nameKey   String        @unique
+  createdAt DateTime      @default(now())
+  sessions  GameSession[]
+}
+
+model GameSession {
+  id                 String         @id @default(uuid())
+  playerId           String
+  player             Player         @relation(fields: [playerId], references: [id])
+  status             SessionStatus  @default(CREATED)
+  score              Int            @default(0)
+  roundsCleared      Int            @default(0)
+  strikes            Int            @default(0)
+  maxStrikes         Int
+  maxRounds          Int
+  currentRoundNumber Int            @default(0)
+  // Optimistic concurrency: every session write guards on this value and increments it.
+  version            Int            @default(0)
+  clientTokenHash    String
+  botInstanceId      String?
+  endReason          EndReason?
+  startedAt          DateTime?
+  endedAt            DateTime?
+  lastActivityAt     DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  rounds             Round[]
+  events             SessionEvent[]
+
+  @@index([status, lastActivityAt])
+  @@index([playerId, createdAt])
+  @@index([status, score])
+}
+
+model Round {
+  id                 String        @id @default(uuid())
+  sessionId          String
+  session            GameSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  number             Int
+  sequence           String[]
+  difficulty         Difficulty
+  separator          String        @default(". ")
+  status             RoundStatus   @default(CREATED)
+  outcome            RoundOutcome?
+  repeats            Int           @default(0)
+  pointsAwarded      Int           @default(0)
+  presentedAt        DateTime?
+  answeredAt         DateTime?
+  latencyMs          Int?
+  // Exactly one response can ever be the accepted one for a round.
+  acceptedResponseId String?       @unique
+  acceptedResponse   Response?     @relation("AcceptedResponse", fields: [acceptedResponseId], references: [id])
+  responses          Response[]    @relation("RoundResponses")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([sessionId, number])
+}
+
+model Response {
+  id               String       @id @default(uuid())
+  roundId          String
+  round            Round        @relation("RoundResponses", fields: [roundId], references: [id], onDelete: Cascade)
+  attemptSeq       Int
+  kind             ResponseKind
+  transcriptRaw    String
+  normalizedTokens String[]
+  vocabTokens      String[]
+  isCorrect        Boolean?
+  // `<roundId>:<attemptSeq>` sent by the bot; the unique index makes a retry a replay.
+  idempotencyKey   String       @unique
+  latencyMs        Int?
+  botInstanceId    String?
+  createdAt        DateTime     @default(now())
+  acceptedForRound Round?       @relation("AcceptedResponse")
+
+  @@unique([roundId, attemptSeq])
+}
+
+model SessionEvent {
+  id        String      @id @default(uuid())
+  sessionId String
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId, createdAt])
+}

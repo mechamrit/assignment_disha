@@ -6,7 +6,7 @@ Voice memory game: the host reads a word sequence, the player repeats it, the AP
 
 ## Commands
 
-Run `nvm use` first. The Makefile refuses any Node major other than 20.
+Run `nvm use` first (`nvm install` on a machine without Node 20). The Makefile refuses anything but Node 20.19 or a newer 20.x.
 
 | Command | Does |
 |---|---|
@@ -19,7 +19,7 @@ Run `nvm use` first. The Makefile refuses any Node major other than 20.
 | `make lint` / `make test` / `make build` | ESLint + tsc + ruff / jest + vitest + pytest / api and web builds |
 | `make ci` | Everything CI runs. Green before every commit |
 
-A target whose inputs are not in the repo prints the missing file and the milestone that delivers it, then fails.
+`bot-dev` and `demo` are stubs in this tree: each prints the file and the milestone that deliver it, then fails.
 
 Per app:
 - api: `npm run test -w api`; one file `npm run test -w api -- src/domain/__tests__/compare.spec.ts`; by name `npm run test -w api -- -t "name"`
@@ -53,6 +53,7 @@ Dependency rule: infrastructure → application → domain, never the reverse. G
 - `/clear` between milestones.
 - When compacting, preserve: the list of modified files, failing tests with their error line, and the STATE.md next action.
 - Docs describe current state only: no timeline or changelog wording, and no em dashes in docs or UI copy.
+- Module READMEs (`api/`, `web/`, `voice-bot/`, `contracts/`, `docs/adr/`, `.claude/`) are the developer guides. When a change alters a module's commands, files, env variables, or layout, update its README in the same change.
 - Pin exact versions for anything added (`.npmrc` sets `save-exact`; Python uses `==`).
 
 ## Gotchas
@@ -61,6 +62,8 @@ Dependency rule: infrastructure → application → domain, never the reverse. G
 - Deepgram keyterm boosting caps at 500 tokens. Trim the vocabulary keyterms to about 50 words if it trips.
 - `MinWordsUserTurnStartStrategy(min_words=2)` needs 2 words only while the bot speaks, 1 when silent. It is the only start strategy: a VAD start strategy fires first and makes it dead code.
 - Pipecat is pinned to `pipecat-ai==1.9.0`. Use `PipelineWorker` and `WorkerRunner`; `PipelineTask` and `PipelineRunner` are deprecated aliases.
-- Compose host ports come from the root `.env` (`POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`). When one changes, change `DATABASE_URL` or `REDIS_URL` in `api/.env` to match.
+- Compose publishes ports on 127.0.0.1 only, and host ports come from the root `.env` (`POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`). Anything connecting from the host uses those ports.
+- Outside production the API loads `api/.env` at startup (`src/config/dotenv.ts`), so `make api-dev`, `npm run openapi:emit -w api`, and the e2e suite work without exporting variables. Real environment variables always win, and the compose container sets them directly.
+- The API needs a generated Prisma client: `npm run db:generate -w api` after a fresh clone or a schema change (`npm ci` does not run it).
 
 @docs/STATE.md

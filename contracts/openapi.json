@@ -1,0 +1,432 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/sessions": {
+      "post": {
+        "operationId": "SessionsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start a session and get the token the browser hands to the bot",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/{id}": {
+      "get": {
+        "operationId": "SessionsController_find",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionViewDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a session. The words of an unfinished round are never included",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/{id}/end": {
+      "post": {
+        "operationId": "SessionsController_end",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-client-token",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionViewDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "End a session from the browser. Calling it twice is safe",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Service health",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Memory Card API",
+    "description": "Game API for the Memory Card voice game. Scoring happens here and nowhere else.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "sessions",
+      "description": ""
+    },
+    {
+      "name": "health",
+      "description": ""
+    }
+  ],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "CreateSessionDto": {
+        "type": "object",
+        "properties": {
+          "playerName": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 24,
+            "example": "Asha"
+          }
+        },
+        "required": [
+          "playerName"
+        ]
+      },
+      "CreateSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "clientToken": {
+            "type": "string"
+          },
+          "player": {
+            "type": "object",
+            "example": {
+              "id": "uuid",
+              "name": "Asha"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "bot": {
+            "type": "object",
+            "example": {
+              "offerUrl": "http://localhost:7860/api/offer"
+            }
+          },
+          "config": {
+            "type": "object",
+            "example": {
+              "maxStrikes": 1,
+              "maxRounds": 15
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "clientToken",
+          "player",
+          "status",
+          "bot",
+          "config"
+        ]
+      },
+      "ErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number"
+          },
+          "code": {
+            "type": "string",
+            "example": "SESSION_NOT_FOUND"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "statusCode",
+          "code",
+          "message"
+        ]
+      },
+      "RoundSummaryDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "repeats": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "number",
+          "length",
+          "status",
+          "repeats"
+        ]
+      },
+      "LastRoundDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          },
+          "sequence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "heard": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "pointsAwarded": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "number",
+          "sequence",
+          "heard",
+          "outcome",
+          "pointsAwarded"
+        ]
+      },
+      "SessionViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "player": {
+            "type": "object",
+            "example": {
+              "name": "Asha"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "roundsCleared": {
+            "type": "number"
+          },
+          "strikes": {
+            "type": "number"
+          },
+          "maxStrikes": {
+            "type": "number"
+          },
+          "maxRounds": {
+            "type": "number"
+          },
+          "currentRound": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoundSummaryDto"
+              }
+            ]
+          },
+          "lastRound": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LastRoundDto"
+              }
+            ]
+          },
+          "endReason": {
+            "type": "object",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "endedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "player",
+          "status",
+          "score",
+          "roundsCleared",
+          "strikes",
+          "maxStrikes",
+          "maxRounds",
+          "currentRound",
+          "lastRound",
+          "endReason",
+          "startedAt",
+          "endedAt",
+          "updatedAt"
+        ]
+      },
+      "HealthDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "db": {
+            "type": "string",
+            "example": "up"
+          },
+          "redis": {
+            "type": "string",
+            "example": "ok"
+          },
+          "uptimeSec": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "db",
+          "redis",
+          "uptimeSec"
+        ]
+      }
+    }
+  }
+}

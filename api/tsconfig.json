@@ -17,5 +17,5 @@
     "sourceMap": true,
     "outDir": "./dist"
   },
-  "include": ["src", "test", "scripts", "jest.config.ts"]
+  "include": ["src", "test", "scripts", "jest.config.ts", "jest-e2e.config.ts"]
 }

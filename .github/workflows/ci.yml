@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull request runs are cancelled; every push to main keeps its run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   UV_VERSION: "0.11.8"
@@ -30,6 +31,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: voice-bot/uv.lock
       - run: npm ci
+      - run: npm run db:generate -w api
       - run: uv sync --locked --project voice-bot
       - run: make lint
 
@@ -42,7 +44,66 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run db:generate -w api
       - run: npm run test -w api
+
+  api-e2e:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mc
+          POSTGRES_PASSWORD: mc
+          POSTGRES_DB: memorycard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mc -d memorycard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://mc:mc@127.0.0.1:5432/memorycard
+      REDIS_URL: redis://127.0.0.1:6379
+      INTERNAL_API_TOKEN: ci-internal-token
+      LOG_LEVEL: silent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:deploy -w api
+      - run: npm run test:e2e -w api
+
+  contracts-check:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://mc:mc@127.0.0.1:5432/memorycard
+      REDIS_URL: redis://127.0.0.1:6379
+      INTERNAL_API_TOKEN: ci-internal-token
+      LOG_LEVEL: silent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate -w api
+      - run: npm run openapi:emit -w api
+      - run: git diff --exit-code -- contracts
 
   web-vitest:
     runs-on: ubuntu-24.04
@@ -77,4 +138,5 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run db:generate -w api
       - run: npm run build -ws
